@@ -84,6 +84,6 @@ func drawMug(into out: String) -> [(String, CGImage)] {
     let joint = drawDetail(mug, parent: front, target: V3(mug.R + 0.02, -0.02, mug.H * 0.54 + 0.24), radius: 0.16, o)
     print(String(format: "  mug: handle joint ringed at (%.3f, %.3f), r %.3f of the front view", joint.at[0], joint.at[1], joint.r))
     let items = [("mug-front", front.image), ("mug-side", side.image), ("mug-above", above.image), ("mug-handle", joint.image)]
-    for (name, img) in items { writePNG(img, to: "\(out)/\(name).png") }
+    for (name, img) in items { save(img, "\(out)/\(name)") }
     return items
 }

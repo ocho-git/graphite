@@ -37,6 +37,6 @@ func drawTree(into out: String) -> [(String, CGImage)] {
         }
     }
     print("  tree: \(b.prims.count) primitives, \(b.strokes.count) twig strokes")
-    writePNG(side.image, to: "\(out)/tree.png")
+    save(side.image, "\(out)/tree")
     return [("tree", side.image)]
 }

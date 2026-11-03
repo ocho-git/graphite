@@ -56,7 +56,7 @@ func drawLeaf(into out: String) -> [(String, CGImage)] {
     cv.dot(g + V2(-7, -6), r: 2.2, press: 0.5)
     let sheet = cv.draw(seed: 3)
     let (img, _) = sheet.trimmed()
-    writePNG(img, to: "\(out)/leaf-study.png")
+    save(img, "\(out)/leaf-study")
     return [("leaf-study", img)]
 }
 

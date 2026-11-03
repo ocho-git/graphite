@@ -36,6 +36,6 @@ func drawCrystal(into out: String) -> [(String, CGImage)] {
     o.rules.creaseAngle = 30                                // and where the faces meet
     let creased = drawView(s, view, o)
     let items = [("crystal", plain.image), ("crystal-creases", creased.image)]
-    for (name, img) in items { writePNG(img, to: "\(out)/\(name).png") }
+    for (name, img) in items { save(img, "\(out)/\(name)") }
     return items
 }
