@@ -1,30 +1,75 @@
 # Graphite
 
 A pencil-drawing engine in Swift. You describe an object as a 3D signed-distance model; Graphite ray-marches it and
-draws what it sees the way a hand draws it with a soft pencil: traced contours with a wobble and tapered ends, hatching
-for the shade (light from the upper left), a sparse stipple, a short stroke on the ground, all deposited through the
-tooth of the paper. The output is graphite on a transparent background, trimmed to its ink.
+draws what it sees the way a hand draws with a soft pencil: traced contours with a wobble and tapered ends, hatching
+for the shade, a sparse stipple, a short stroke on the ground, all laid through the tooth of the paper. The output is
+graphite on a transparent background, trimmed to its ink.
 
-It started as the drawing engine of a game's field guide (stone lanterns, bridges, trees, birds, insects); this is that
-engine on its own, with neutral examples. "Graphite" is a working name.
+![A gallery of drawings made with Graphite](Examples/output/gallery.jpg)
 
-![The examples](Examples/output/examples.png)
-
-- Swift package, macOS 13+, no dependencies beyond Apple's frameworks (Foundation, CoreGraphics, ImageIO).
+- A Swift package for macOS 13 and later, with no dependencies beyond Apple's frameworks (Foundation, CoreGraphics,
+  ImageIO).
 - Deterministic: the same model, view and seed give the same drawing, pixel for pixel.
+- It began as the drawing engine of a game's illustrated field guide.
+
+## Gallery
+
+Every subject below is a short function in [Examples/Gallery](Examples/Gallery), its proportions, view and light drawn
+from a seed. None of them was tuned for the engine.
+
+<p>
+<img src="Examples/output/gallery/lighthouse.jpg" width="49%" alt="A lighthouse">
+<img src="Examples/output/gallery/lighthouse-lantern.jpg" width="49%" alt="A close-up of the lighthouse's lantern">
+</p>
+
+A lighthouse, and a close-up of its lantern ringed on the view (`drawDetail`). The stripes, door, windows and panes
+are regions of its surface; a line is drawn wherever the region changes.
+
+<p>
+<img src="Examples/output/gallery/arcade.jpg" width="49%" alt="An arcade of columns">
+<img src="Examples/output/gallery/crystals.jpg" width="49%" alt="Crystals on a rock">
+</p>
+
+An arcade, its voussoirs and courses drawn as regions; crystals on a rock, each crystal a single region whose facets
+are traced as creases.
+
+<p>
+<img src="Examples/output/gallery/mushrooms.jpg" width="49%" alt="Mushrooms">
+<img src="Examples/output/gallery/boulder.jpg" width="49%" alt="A boulder and stones">
+</p>
+
+Mushrooms from a low eye, gills and spots as regions; a boulder and its stones, lit from the upper right
+(`drawView(…, light:)`).
+
+![One vase drawn four ways](Examples/output/styles.jpg)
+
+One vase, one view, four hands: the standard style, an ink-like one, a light and sketchy one, and dense hatching
+(see [The Style](#the-style)).
 
 ## Quick start
 
 ```sh
+git clone https://github.com/ocho-git/graphite.git
+cd graphite
 swift build -c release
-swift run -c release graphite            # renders the examples into Examples/output/
-swift run -c release graphite mug        # or some of them: mug, tree, leaf, crystal
+swift run -c release graphite              # renders every example into Examples/output/
+swift run -c release graphite mug gallery  # or some of them: mug, tree, leaf, crystal, gallery, styles
 ```
 
+Each drawing is written as a PNG (graphite on a transparent background) and as a JPEG preview on paper.
+
 The examples are in [Examples/](Examples): [Mug.swift](Examples/Mug.swift) (a subject written from scratch, three views
-and a detail), [Tree.swift](Examples/Tree.swift) (a tree grown by the library's `Brancher` on the primitive scene),
-[Leaf.swift](Examples/Leaf.swift) (a close study drawn from 2D vector shapes) and [Crystal.swift](Examples/Crystal.swift)
-(a faceted crystal as one region, drawn without and with creases).
+and a detail), [Tree.swift](Examples/Tree.swift) (a tree grown by `Brancher` on the primitive scene),
+[Leaf.swift](Examples/Leaf.swift) (a close study drawn from 2D vector shapes), [Crystal.swift](Examples/Crystal.swift)
+(a faceted crystal as one region, without and with creases) and the [gallery](Examples/Gallery).
+
+To use it in your own package:
+
+```swift
+.package(url: "https://github.com/ocho-git/graphite.git", branch: "main")
+// and in your target's dependencies:
+.product(name: "Graphite", package: "graphite")
+```
 
 ## A minimal drawing
 
@@ -43,15 +88,15 @@ writePNG(view.image, to: "pebble.png")
 
 `drawView` frames the subject, marches it at two samples per pixel, draws it and trims it. `drawDetail(subject,
 parent: view, target:, radius:)` draws a closer study of a point of a view and tells you where to ring it on the
-parent. Both take an optional `light:` (the direction toward the light; by default the view's own, from the upper left
-of the picture, and a detail's is its parent's). If the framing pass sees nothing (empty bounds, a distance that never
-reaches the surface, a view that looks away), `drawView` returns one transparent pixel and says why in
-`drawing.error`, rather than drawing an empty sheet or trapping.
+parent. Both take an optional `light:`, the direction toward the light; by default it is the view's own, from the
+upper left of the picture, and a detail's is its parent's. If the framing pass sees nothing (empty bounds, a distance
+that never reaches the surface, a view that looks away), `drawView` returns one transparent pixel and says why in
+`drawing.error`.
 
 `ShapeSubject` is the quickest way to write a shape of a few parts: closures, no class. It draws as fast as the same
-shape written as a class (the mug: 0.35 s either way). Keep its closures' captures strong: an `[unowned x]` or
-`[weak x]` capture costs a reference count on every call, from every core, and that alone can make a drawing a hundred
-times slower. For many parts, regions with rules of their own or the optional answers below, write a class.
+shape written as a class. Keep its closures' captures strong: an `[unowned x]` or `[weak x]` capture costs a reference
+count on every call, from every core, and that alone can make a drawing a hundred times slower. For many parts, or the
+optional answers below, write a class.
 
 ## How it works
 
@@ -89,10 +134,11 @@ image: graphite colour, alpha from the graphite, trimmed to the ink → PNG
    - **hatching**: five layers of parallel dashes at 55° and −32°, each starting at a tone threshold and pressed harder
      in deeper shade, broken where the region changes;
    - **stipple**: dots and short flecks, clustered, denser in the shade, scaled by the material;
-   - **contours** ([Contours.swift](Sources/Engine/Contours.swift)): the region boundaries are traced as chains of
-     cracks between samples, each weighted (silhouettes heavy, occluding edges strong, creases by their fold angle,
-     drawn features by kind: `ContourRules`), smoothed, resampled and drawn as a hand would: in overlapping strokes of
-     70–190 px with a slow sway and a tremor, tapered at both ends, pressed harder where they border shade;
+   - **contours** ([Contours.swift](Sources/Engine/Contours.swift)): the region boundaries (and, if you ask, the
+     creases inside a region) are traced as chains of cracks between samples, each weighted (silhouettes heavy,
+     occluding edges strong, folds by their angle, drawn features by kind: `ContourRules`), smoothed, resampled and
+     drawn as a hand would: in overlapping strokes of 70–190 px with a slow sway and a tremor, tapered at both ends,
+     pressed harder where they border shade;
    - **ground strokes**: a short double stroke under each part that stands on the ground, never over a part in front.
 5. **Finer than the marcher** ([Strokes3D.swift](Sources/Engine/Strokes3D.swift)): twigs, needles, veins and fin rays
    are 3D strokes (`Stroke3D`, as wide as the thing they draw) or 3D curves drawn as contours (`Curve3D`), projected
@@ -123,6 +169,14 @@ final class Lantern: Subject {
 }
 ```
 
+<p>
+<img src="Examples/output/mug-front.jpg" width="49%" alt="The mug of Mug.swift">
+<img src="Examples/output/mug-handle.jpg" width="49%" alt="A close-up of where the mug's handle meets its body">
+</p>
+
+The mug of [Mug.swift](Examples/Mug.swift): two parts (body and handle) and four regions (bare clay, glaze, the glazed
+inside, the handle), and a close-up of where the handle meets the body.
+
 - **Model in true proportions**, in any unit; the drawing scales to the view. Use the library in
   [SDF.swift](Sources/Engine/SDF.swift): spheres, ellipsoids, boxes, capsules, round cones (tapered tubes), capped cones,
   tori, planes, regular prisms and polygons, 2D ellipses, rounded rectangles and polygons for plans and profiles,
@@ -134,24 +188,18 @@ final class Lantern: Subject {
   paper, `minTone` for an underside, `stipple` for speckled stone, `fill: 1` for an opening's dark fill.
 - **Line weights**: `SketchOptions.rules` (`ContourRules`) sets silhouettes, occluding edges, creases and per-kind
   floors; a subject can also answer `edgeWeight(a, b)` for its own seams.
-- **Creases inside a region**: lines are traced where the region changes, so by default a faceted subject needs a
-  region per facet. Or set `rules.creaseAngle` (degrees; 30–45 for sharp edges, off by default): wherever the surface
-  normal turns by more than that between neighbouring samples of one region, a line of weight `rules.crease` (0.55) is
-  traced too. [Crystal.swift](Examples/Crystal.swift) draws a quartz crystal as a single region, without and with
-  them. Curved surfaces stay unlined at 20–30°; much lower, tight curves and a noisy surface begin to draw. With your
-  own weight function, `traceContours(g, creases: angle, weight:)` hands it these edges with `a == b`.
 - **Many small primitives** (a tree, a shrub): use `PrimitiveBuilder` / `PrimitiveScene` (cones, ellipsoids, tori in
   smoothly united groups with surface noise, in a uniform grid), as [Tree.swift](Examples/Tree.swift) does.
 - **Trees**: `Brancher` ([Brancher.swift](Sources/Engine/Brancher.swift)) grows one on a `PrimitiveBuilder`: limbs
   that wander, taper and fork two or three ways until their twigs carry leaf clusters, all from one `Rng`. Give it the
   bark's region and a leaf cluster's (from its group), change any of its knobs (steps, wander, taper, forking, spread,
   the leaves, or a `tip` closure for blossoms or needles), and call `grow(builder, from:, dir:, length:, radius:,
-  depth:, wood:, rng:)`; its defaults grow the example tree.
+  depth:, wood:, rng:)`. Its defaults grow the example tree; the gallery's tree draws its knobs from a seed.
 - **Extras**: `drawView(subject, view, options) { camera, buffer, sheet, rng in … }` runs after the contours: draw 3D
   strokes, marks, water lines, anything, with the same pencil.
 - **Thin parts' shadows**: the soft shadow's edge widens with the distance from what casts it (about t /
   `march.shadowSharpness` at distance t; 9 by default), so a thin part far above what it shades (a railing, a twig)
-  casts a wide, faint, ghostly shadow. Raise `options.march.shadowSharpness` to 16–32 for a narrower, firmer one.
+  casts a wide, faint shadow. Raise `options.march.shadowSharpness` to 16–32 for a narrower, firmer one.
 - Optional answers: `missID` (seen through an opening), `exactHit` (thin planes the marcher should not step to:
   wings), `groundZ` (a plane that takes the cast shadow in views from above), `groundFoot` (a foot that may hide behind
   a leg), `shadowSDF` / `occlusionSDF` (what casts shadows, what occludes), `willRender` (to keep the unit, camera or
@@ -161,10 +209,27 @@ For full control, skip `drawView` and call the steps yourself: `render(subject, 
 `ToneMap(buffer)`, `drawOpenings`, `drawHatching`, `drawStipple`, `traceContours` + `drawChains`, `groundStroke`,
 `sheet.trimmed()`.
 
+## Creases
+
+Lines are traced where the region changes, so a sharp edge inside one region draws nothing, and a faceted subject
+would need a region per facet. Set `rules.creaseAngle` instead (degrees; 30–45 suits sharp edges; off by default):
+wherever the surface normal turns by more than that between neighbouring samples of one region, a line of weight
+`rules.crease` (0.55) is traced too.
+
+<p>
+<img src="Examples/output/crystal.jpg" width="32%" alt="A crystal drawn as one region, without creases">
+<img src="Examples/output/crystal-creases.jpg" width="32%" alt="The same crystal with creases">
+</p>
+
+[Crystal.swift](Examples/Crystal.swift): a quartz crystal as a single region, without and with creases. Curved
+surfaces stay unlined at 20–30°; much lower, tight curves and a noisy surface begin to draw. With your own weight
+function, `traceContours(g, creases: angle, weight:)` hands it these edges with `a == b`.
+
 ## The Style
 
 Everything that sets the look is in one value, `Style` ([Style.swift](Sources/Engine/Style.swift)); `Style.standard` is
-the look above. Pass a changed copy in `SketchOptions.style` (or to `Sheet(w:h:seed:style:)`).
+the default look. Pass a changed copy in `SketchOptions.style` (or to `Sheet(w:h:seed:style:)`). The gallery's
+[styles](Examples/Gallery/Gallery.swift) are three such copies.
 
 | knob | default | what it does |
 | --- | --- | --- |
@@ -193,38 +258,23 @@ Line weights per kind (silhouettes, occluding edges, creases, seams) are not sty
 ## Performance
 
 - Rendering is CPU-only and runs the march on all cores (`DispatchQueue.concurrentPerform` over rows); the pencil
-  passes run on one core. A 1200 px drawing of a modest subject takes a few seconds; a dense tree or a whole scene
-  takes tens of seconds to minutes.
+  passes run on one core. A 1200 px drawing of a modest subject takes well under a second to a few seconds on a
+  recent Mac; a dense tree or a whole scene takes tens of seconds.
 - The cost is almost all in `sceneSDF`. Give every part a bounding box and skip it when the box is farther than the
-  best distance so far (see `ShapeSubject.sceneSDF`); for thousands of primitives use `PrimitiveScene`, which buckets
-  them in a grid.
-- Keep reference counting out of `sceneSDF`. It runs on every core at once, and a retain and release of a shared
-  object (a class captured `unowned` or `weak`, an array or closure read from a `var` and copied) on every call
-  bounces one counter between the cores: the mug as a `ShapeSubject` once took 46–58 s that way, against 0.35 s as a
-  class. `ShapeSubject` now reads its parts from plain memory and takes 0.35 s too.
+  best distance so far (`ShapeSubject` does this); for thousands of primitives use `PrimitiveScene`, which buckets them
+  in a grid.
+- Keep reference counting out of `sceneSDF`. It runs on every core at once, and a retain and release of one shared
+  object on every call (a class captured `unowned` or `weak`, a closure copied out of an array) bounces a single
+  counter between the cores. That once made the mug a hundred times slower as a `ShapeSubject` than as a class;
+  `ShapeSubject` now reads its parts from plain memory and draws the mug in the same 0.35 s as the class.
 - Shadows and occlusion dominate the shading: `ShadeSharing.perPixel` (the `drawView` default) shades one sample per
   pixel and lets the others borrow it when they show the same region; `.perPart` and `.byNormal` share within a pixel
   by part or by facing.
-- Build with `-c release`; for your own generators, `-Ounchecked` (an unsafe flag in your package's target) helps the
-  distance functions a little more. A distance field that is only a bound (blended ellipsoids, noise) wants a smaller
+- Build with `-c release`; in your own package, `-Ounchecked` (an unsafe flag in your target) helps the distance
+  functions a little more. A distance field that is only a bound (blended ellipsoids, noise) wants a smaller
   `MarchSettings.stepScale` (0.7) and more steps.
 - Two samples per pixel (`ss = 2`) is the default and enough; the coarse framing pass costs little.
 
-## Status
-
-The engine merges six copies of the field guide's drawing code into one; the field guide's generators now build
-against this package. Part of their output was re-rendered and compared with the drawings they made before, pixel by
-pixel: the lantern elevations (3), the stone-and-wood chapter (61), the trees chapter (55), 26 of the plants chapter's
-41, and one entry each of the birds (mejiro, 4) and the water-and-insects chapters (genji-botaru, 4). All are identical,
-but for one firefly detail whose file predates its model's last change (the old engine draws it the same as this one).
-The full comparison (every chapter drawing and the frontispiece) has not been run yet.
-
-## Renaming
-
-The name lives in `Package.swift` (`let name = "Graphite"`): the package, the library and its module, and the
-command-line tool. After changing it, change the one `@_exported import` line in [Examples/Engine.swift](Examples/Engine.swift)
-(and in any project that depends on the package).
-
 ## License
 
-Not chosen yet.
+MIT: free to use, modify and include in any project, commercial or not. See [LICENSE](LICENSE).
