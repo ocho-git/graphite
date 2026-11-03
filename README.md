@@ -144,6 +144,9 @@ final class Lantern: Subject {
   smoothly united groups with surface noise, in a uniform grid), as [Tree.swift](Examples/Tree.swift) does.
 - **Extras**: `drawView(subject, view, options) { camera, buffer, sheet, rng in … }` runs after the contours: draw 3D
   strokes, marks, water lines, anything, with the same pencil.
+- **Thin parts' shadows**: the soft shadow's edge widens with the distance from what casts it (about t /
+  `march.shadowSharpness` at distance t; 9 by default), so a thin part far above what it shades (a railing, a twig)
+  casts a wide, faint, ghostly shadow. Raise `options.march.shadowSharpness` to 16–32 for a narrower, firmer one.
 - Optional answers: `missID` (seen through an opening), `exactHit` (thin planes the marcher should not step to:
   wings), `groundZ` (a plane that takes the cast shadow in views from above), `groundFoot` (a foot that may hide behind
   a leg), `shadowSDF` / `occlusionSDF` (what casts shadows, what occludes), `willRender` (to keep the unit, camera or

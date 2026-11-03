@@ -14,9 +14,16 @@ public struct MarchSettings {
     public var boxPad: Double
     /// Steps of the soft-shadow ray.
     public var shadowSteps: Int
+    /// How hard the soft shadow's edge is: a ray that passes an occluder at distance d, t along the shadow ray, is
+    /// darkened to min(sharpness × d / t), so the penumbra is about t / sharpness wide. 9 is the field guide's.
+    /// Raise it (16–32) when thin parts far from what they shade (a railing, a twig) cast wide, ghostly shadows that
+    /// never darken: the penumbra narrows to the part's own width.
+    public var shadowSharpness: Double
 
-    public init(unit: Double = 1, maxSteps: Int = 500, stepScale: Double = 0.85, boxPad: Double = 0.01, shadowSteps: Int = 160) {
+    public init(unit: Double = 1, maxSteps: Int = 500, stepScale: Double = 0.85, boxPad: Double = 0.01, shadowSteps: Int = 160,
+                shadowSharpness: Double = 9) {
         self.unit = unit; self.maxSteps = maxSteps; self.stepScale = stepScale; self.boxPad = boxPad; self.shadowSteps = shadowSteps
+        self.shadowSharpness = shadowSharpness
     }
 }
 
@@ -47,7 +54,7 @@ public struct MarchSettings {
     for _ in 0..<m.shadowSteps {
         let (d, i) = s.shadowSDF(ro + rd * t)
         if d < eps && i >= 0 { return 0 }
-        if i >= 0 { res = min(res, 9 * d / t) }    // a distance that only bounds empty space casts no penumbra
+        if i >= 0 { res = min(res, m.shadowSharpness * d / t) }    // a distance that only bounds empty space casts no penumbra
         t += clampd(d * 0.9, 0.0015 * m.unit, 0.05 * m.unit)
         if t > t1 { break }
     }
