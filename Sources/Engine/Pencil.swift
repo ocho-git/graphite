@@ -57,12 +57,13 @@ public func drawChains(_ chains: [Chain], on sheet: Sheet, tone t1: ToneMap, ss:
 }
 
 /// Hatching: for each layer, parallel lines across the sheet; along each, dashes wherever the tone reaches the layer's
-/// threshold, broken where the region changes, pressed harder in deeper shade.
-public func drawHatching(_ t1: ToneMap, on sheet: Sheet, rng: inout Rng) {
+/// threshold, broken where the region changes, pressed harder in deeper shade. `turn` (degrees, counter-clockwise)
+/// turns every layer's angle.
+public func drawHatching(_ t1: ToneMap, on sheet: Sheet, rng: inout Rng, turn: Double = 0) {
     let H = sheet.style.hatching
     let W = Double(t1.w), Hh = Double(t1.h)
     for L in H.layers {
-        let a = L.angle * Double.pi / 180
+        let a = (turn == 0 ? L.angle : L.angle + turn) * Double.pi / 180
         let dir = V2(cos(a), -sin(a)), nr = V2(-dir.y, dir.x)
         let corners = [V2(0, 0), V2(W, 0), V2(0, Hh), V2(W, Hh)]
         let os = corners.map { dot2($0, nr) }, ss = corners.map { dot2($0, dir) }

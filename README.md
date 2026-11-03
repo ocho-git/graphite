@@ -43,7 +43,10 @@ writePNG(view.image, to: "pebble.png")
 
 `drawView` frames the subject, marches it at two samples per pixel, draws it and trims it. `drawDetail(subject,
 parent: view, target:, radius:)` draws a closer study of a point of a view and tells you where to ring it on the
-parent.
+parent. Both take an optional `light:` (the direction toward the light; by default the view's own, from the upper left
+of the picture, and a detail's is its parent's). If the framing pass sees nothing (empty bounds, a distance that never
+reaches the surface, a view that looks away), `drawView` returns one transparent pixel and says why in
+`drawing.error`, rather than drawing an empty sheet or trapping.
 
 `ShapeSubject` is the quickest way to write a shape of a few parts: closures, no class. It draws as fast as the same
 shape written as a class (the mug: 0.35 s either way). Keep its closures' captures strong: an `[unowned x]` or
@@ -171,6 +174,7 @@ the look above. Pass a changed copy in `SketchOptions.style` (or to `Sheet(w:h:s
 | `hatching.layers` | 55°/6.2 px ×3, −32°/6.0 px ×2 | angle, spacing, phase, tone threshold, pressure range and width of each layer |
 | `hatching.dashMin/Max`, `gapMin/Max` | 14–40 px, 1.5–5 px | the dashes along a hatch line |
 | `hatching.tilt`, `shift`, `bow` | 0.035 rad, 0.5 px, 0.6 px | each dash's irregularity |
+| `hatching.followLight` | false | turn the hatching's angles with the light (`drawView(…, light:)`): by as much as the light turns from the upper left, seen in the picture |
 | `stipple.density` | 0.010 | dots per pixel at stipple 1 (scaled by tone and clustering) |
 | `stipple.dots`, `dotRadius…`, `dotPressure…` | 0.75, … | dots versus flecks, their size and pressure |
 | `fill.opening`, `fill.through` | 0.42, 0.2 (+ grain) | the soft fills of openings and of what is seen through them |

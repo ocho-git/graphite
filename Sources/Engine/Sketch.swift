@@ -54,6 +54,10 @@ public struct Drawing {
     /// The trimmed image's frame on the canvas (top-left origin).
     public var crop: CGRect
     public var toEye: V3
+    /// The light it was drawn with, when one was given (nil: the view's own, `viewLight`).
+    public var light: V3? = nil
+    /// Why nothing was drawn (the image is then one transparent pixel), nil when the view drew.
+    public var error: DrawingError? = nil
     /// Where a world point lands on the trimmed image, normalised 0 … 1 (x right, y down).
     public func normalised(_ p: V3) -> V2 {
         let s = cam.project(p)
@@ -92,8 +96,32 @@ public func viewCamera(_ v: View, lo: V3, hi: V3) -> (Camera, V3, V3) {
     }
 }
 
-/// The light a view was drawn with (recomputed from its camera, as viewCamera made it).
+/// Why a view drew nothing.
+public enum DrawingError: Error, CustomStringConvertible {
+    /// The framing pass (a coarse render of the subject's bounds from the view) hit nothing: the subject is empty, its
+    /// bounds do not hold it, its distance never falls below the march's threshold, or the view looks away from it.
+    case nothingInView
+    /// The subject's bounds are empty (lo not below hi) or not finite: there is nothing to frame.
+    case emptyBounds
+    public var description: String {
+        switch self {
+        case .nothingInView:
+            return "nothing in view: the framing pass saw no surface (check the subject's bounds and distance, and the view)"
+        case .emptyBounds:
+            return "empty bounds: the subject's bounds hold nothing (lo must be below hi, and both finite)"
+        }
+    }
+}
+
+/// The light a view was drawn with: the one it was given, else its own (recomputed from its camera, as viewCamera
+/// made it).
 public func viewLight(_ d: Drawing) -> V3 {
+    if let l = d.light { return l }
+    return standardLight(d)
+}
+
+/// A view's own light, from the upper left of the picture (whatever light it was drawn with).
+public func standardLight(_ d: Drawing) -> V3 {
     let cam = d.cam
     if cam.ortho { return norm3(cam.right * -0.32 + cam.up * 0.27 + V3(0, 0, 1.0)) }
     let horiz = norm3(V3(d.toEye.x, d.toEye.y, 0))
@@ -112,11 +140,21 @@ public func renderOptions<S: Subject>(_ s: S, _ o: SketchOptions, unit: Double) 
     return RenderOptions(march: m, sharing: o.sharing, groundShadow: gs)
 }
 
-/// Draws one view of a subject.
-public func drawView<S: Subject>(_ s: S, _ view: View, _ o: SketchOptions = SketchOptions(), extras: Extras? = nil) -> Drawing {
+/// Draws one view of a subject. `light` is the direction toward the light (normalised here); nil, the default, is the
+/// view's own, from the upper left of the picture. When the framing pass sees nothing, the drawing is one transparent
+/// pixel and its `error` says so.
+public func drawView<S: Subject>(_ s: S, _ view: View, _ o: SketchOptions = SketchOptions(), light given: V3? = nil,
+                                 extras: Extras? = nil) -> Drawing {
     let b = s.bounds
     var (cam, toEye, light) = viewCamera(view, lo: b.lo, hi: b.hi)
+    let ownLight = light
+    if let l = given { light = norm3(l) }
+    func nothing(_ e: DrawingError) -> Drawing {
+        Drawing(cam: cam, image: Sheet(w: 1, h: 1, seed: 0, style: o.style).image(), crop: CGRect(x: 0, y: 0, width: 1, height: 1),
+                toEye: toEye, light: given.map(norm3), error: e)
+    }
     let size = max(b.hi.x - b.lo.x, b.hi.y - b.lo.y, b.hi.z - b.lo.z)
+    guard size > 0, size.isFinite, (b.lo + b.hi).x.isFinite, (b.lo + b.hi).y.isFinite, (b.lo + b.hi).z.isFinite else { return nothing(.emptyBounds) }
     let centre = (b.lo + b.hi) / 2
     // framing pass on a coarse buffer (cast shadows included: they are part of the drawing)
     let N = 240
@@ -132,6 +170,7 @@ public func drawView<S: Subject>(_ s: S, _ view: View, _ o: SketchOptions = Sket
     for y in 0..<N { for x in 0..<N where gc.id[y * N + x] != 0 {
         bx0 = min(bx0, Double(x)); bx1 = max(bx1, Double(x + 1)); by0 = min(by0, Double(y)); by1 = max(by1, Double(y + 1))
     } }
+    guard bx1 > bx0, by1 > by0 else { return nothing(.nothingInView) }
     // image-plane extent (u right, v up), independent of f
     let u0 = (bx0 - cam.cx) / cam.f, u1 = (bx1 - cam.cx) / cam.f
     let v0 = (cam.cy - by1) / cam.f, v1 = (cam.cy - by0) / cam.f
@@ -145,16 +184,29 @@ public func drawView<S: Subject>(_ s: S, _ view: View, _ o: SketchOptions = Sket
     let ss = 2
     let g = GBuffer(w: W * ss, h: H * ss, ss: ss)
     render(s, camera: cam, into: g, light: light, options: renderOptions(s, o, unit: unit))
-    let sheet = pencil(s, cam, g, o, unit: unit, extras: extras)
+    let sheet = pencil(s, cam, g, o, unit: unit, hatchTurn: hatchTurn(o.style, cam, light: light, own: ownLight), extras: extras)
     let (img, crop) = sheet.trimmed(o.trim)
-    return Drawing(cam: cam, image: img, crop: crop, toEye: toEye)
+    return Drawing(cam: cam, image: img, crop: crop, toEye: toEye, light: given.map(norm3))
+}
+
+/// How far the hatching turns (degrees) when the style follows the light: the light's direction in the picture
+/// against the view's own light's; 0 when it does not, or when either points along the view axis.
+public func hatchTurn(_ style: Style, _ cam: Camera, light: V3, own: V3) -> Double {
+    guard style.hatching.followLight else { return 0 }
+    let a = V2(dot3(light, cam.right), dot3(light, cam.up)), b = V2(dot3(own, cam.right), dot3(own, cam.up))
+    guard len2(a) > 1e-6, len2(b) > 1e-6 else { return 0 }
+    var t = (atan2(a.y, a.x) - atan2(b.y, b.x)) * 180 / Double.pi
+    if t > 180 { t -= 360 } else if t < -180 { t += 360 }
+    return t
 }
 
 /// A closer study of `parent`: the same eye, a field `radius` world units round `target`, drawn on a 1000 px canvas
 /// and fading out in a loose circle. Returns the image and its ring on the parent: centre `at` (normalised to the
-/// parent's image) and radius `r` (a share of the parent's width).
+/// parent's image) and radius `r` (a share of the parent's width). `light` defaults to the parent's. A parent that
+/// drew nothing gives one transparent pixel.
 public func drawDetail<S: Subject>(_ s: S, parent: Drawing, target: V3, radius: Double, _ o: SketchOptions = SketchOptions(),
-                                   extras: Extras? = nil) -> (image: CGImage, at: [Double], r: Double) {
+                                   light given: V3? = nil, extras: Extras? = nil) -> (image: CGImage, at: [Double], r: Double) {
+    if parent.error != nil { return (Sheet(w: 1, h: 1, seed: 0, style: o.style).image(), [0.5, 0.5], 0) }
     var cam = parent.cam
     let S0 = cam.scaleAt(target)
     let R = 470.0, C = 1000
@@ -164,11 +216,11 @@ public func drawDetail<S: Subject>(_ s: S, parent: Drawing, target: V3, radius: 
     let pt = cam.project(target)
     cam.cx = Double(C) / 2 - pt.x; cam.cy = Double(C) / 2 - pt.y
     let unit = (1 / cam.scaleAt(target)) / o.referencePixel
-    let light = viewLight(parent)
+    let light = given.map(norm3) ?? viewLight(parent)
     let ss = 2
     let g = GBuffer(w: C * ss, h: C * ss, ss: ss)
     render(s, camera: cam, into: g, light: light, options: renderOptions(s, o, unit: unit))
-    let sheet = pencil(s, cam, g, o, unit: unit, extras: extras)
+    let sheet = pencil(s, cam, g, o, unit: unit, hatchTurn: hatchTurn(o.style, cam, light: light, own: standardLight(parent)), extras: extras)
     sheet.fadeCircle(radius: R)
     let (img, _) = sheet.trimmed(o.trim)
     let pp = parent.cam.project(target)
@@ -177,13 +229,15 @@ public func drawDetail<S: Subject>(_ s: S, parent: Drawing, target: V3, radius: 
 }
 
 /// The standard passes over a rendered buffer: openings, hatching, stipple, contours, extras, ground strokes.
-public func pencil<S: Subject>(_ s: S, _ cam: Camera, _ g: GBuffer, _ o: SketchOptions, unit: Double, extras: Extras? = nil) -> Sheet {
+/// `hatchTurn` turns the hatching's angles (degrees; see `hatchTurn(_:_:light:own:)`).
+public func pencil<S: Subject>(_ s: S, _ cam: Camera, _ g: GBuffer, _ o: SketchOptions, unit: Double, hatchTurn turn: Double = 0,
+                               extras: Extras? = nil) -> Sheet {
     let W = g.w / g.ss, H = g.h / g.ss, ss = g.ss
     var rng = Rng(o.seed &* 7919 &+ 17)
     let sheet = Sheet(w: W, h: H, seed: Double(o.seed % 97) * 0.37 + 3, style: o.style)
     let t1 = ToneMap(g)
     drawOpenings(g, on: sheet, scale: pow(min(unit, 1), 0.7))
-    drawHatching(t1, on: sheet, rng: &rng)
+    drawHatching(t1, on: sheet, rng: &rng, turn: turn)
     let skip = o.noStipple, gsKind = o.groundShadow ? o.groundShadowKind : -1
     drawStipple(t1, on: sheet, seed: Double(o.seed % 89) * 0.53 + 1) { id, i in
         let k = SurfaceID.kind(id)

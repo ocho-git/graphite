@@ -87,6 +87,9 @@ public struct Style {
         public var tilt: Double = 0.035, shift: Double = 0.5, bow: Double = 0.6
         /// Pressure ramp over this much tone above a layer's threshold; a dash fades where the tone drops `cutoff` below it.
         public var ramp: Double = 0.22, cutoff: Double = 0.04
+        /// Turn the layers' angles with the light: by as much as a view's light, seen in the picture, turns away from
+        /// its own light at the upper left (drawView and drawDetail given a `light:`). Off: the angles stay put.
+        public var followLight: Bool = false
         public init() {}
     }
 
