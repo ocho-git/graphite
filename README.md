@@ -22,7 +22,7 @@ swift run -c release graphite mug        # or some of them: mug, tree, leaf, cry
 ```
 
 The examples are in [Examples/](Examples): [Mug.swift](Examples/Mug.swift) (a subject written from scratch, three views
-and a detail), [Tree.swift](Examples/Tree.swift) (a tree grown by a small brancher on the primitive scene),
+and a detail), [Tree.swift](Examples/Tree.swift) (a tree grown by the library's `Brancher` on the primitive scene),
 [Leaf.swift](Examples/Leaf.swift) (a close study drawn from 2D vector shapes) and [Crystal.swift](Examples/Crystal.swift)
 (a faceted crystal as one region, drawn without and with creases).
 
@@ -142,6 +142,11 @@ final class Lantern: Subject {
   own weight function, `traceContours(g, creases: angle, weight:)` hands it these edges with `a == b`.
 - **Many small primitives** (a tree, a shrub): use `PrimitiveBuilder` / `PrimitiveScene` (cones, ellipsoids, tori in
   smoothly united groups with surface noise, in a uniform grid), as [Tree.swift](Examples/Tree.swift) does.
+- **Trees**: `Brancher` ([Brancher.swift](Sources/Engine/Brancher.swift)) grows one on a `PrimitiveBuilder`: limbs
+  that wander, taper and fork two or three ways until their twigs carry leaf clusters, all from one `Rng`. Give it the
+  bark's region and a leaf cluster's (from its group), change any of its knobs (steps, wander, taper, forking, spread,
+  the leaves, or a `tip` closure for blossoms or needles), and call `grow(builder, from:, dir:, length:, radius:,
+  depth:, wood:, rng:)`; its defaults grow the example tree.
 - **Extras**: `drawView(subject, view, options) { camera, buffer, sheet, rng in … }` runs after the contours: draw 3D
   strokes, marks, water lines, anything, with the same pencil.
 - **Thin parts' shadows**: the soft shadow's edge widens with the distance from what casts it (about t /
