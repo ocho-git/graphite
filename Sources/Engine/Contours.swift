@@ -29,6 +29,7 @@ public struct Edge {
 ///   - against what is seen through an opening (`throughKind`): `throughRim` if the other side is one of `darkRim`
 ///     (the opening's inside), else `throughEdge`;
 ///   - an occluding edge (a depth jump over `depthGap`): `occluding`;
+///   - a crease inside one region (traced only when `creaseAngle` is set): `crease`;
 ///   - the subject's own edge weight (Subject.edgeWeight), if it has one;
 ///   - else a crease by its fold, at least `partEdge` between parts, at least `floor[kind]` next to a kind.
 public struct ContourRules {
@@ -43,6 +44,12 @@ public struct ContourRules {
     public var floor: [Int: Double] = [:]
     /// The subject's own rule, consulted after the depth test.
     public var edge: ((Int32, Int32) -> Double?)? = nil
+    /// Creases inside a region: where the surface normal turns by more than `creaseAngle` degrees between
+    /// neighbouring samples of the same region, a line of weight `crease` is traced (the edges of a faceted crystal
+    /// drawn as one region). nil, the default: lines only where the region changes. 30–45° suits sharp edges; below
+    /// about 20° the march's noise and tight curves start to draw.
+    public var creaseAngle: Double? = nil
+    public var crease: Double = 0.55
     public init() {}
 
     @inlinable public func weight(_ e: Edge) -> Double {
@@ -55,6 +62,7 @@ public struct ContourRules {
             return 1.0
         }
         if A == 0 || B == 0 { return silhouette[A == 0 ? kB : kA] ?? 1.0 }
+        if A == B { return abs(e.depthA - e.depthB) > depthGap ? occluding : crease }
         if let tk = throughKind, kA == tk || kB == tk {
             let other = kA == tk ? kB : kA
             return darkRim.contains(other) ? throughRim : throughEdge
@@ -69,25 +77,34 @@ public struct ContourRules {
     }
 }
 
-/// Traces the region boundaries of a geometry buffer into chains, weighing each crack with `weight`.
-public func traceContours(_ g: GBuffer, weight: (Edge) -> Double) -> [Chain] {
+/// Traces the region boundaries of a geometry buffer into chains, weighing each crack with `weight`. With `creases`
+/// (degrees), cracks are also traced between neighbouring samples of one region whose normals turn by more than that
+/// angle: `weight` then sees edges with `a == b`.
+public func traceContours(_ g: GBuffer, creases: Double? = nil, weight: (Edge) -> Double) -> [Chain] {
     let w = g.w, h = g.h
     let vw = w + 1
     struct Crack { var v0: Int32; var v1: Int32; var a: Int32; var b: Int32; var key: UInt64 }
     var cracks: [Crack] = []
     cracks.reserveCapacity(200_000)
     @inline(__always) func key(_ x: Int32, _ y: Int32) -> UInt64 { let lo = min(x, y), hi = max(x, y); return UInt64(UInt32(bitPattern: lo)) << 32 | UInt64(UInt32(bitPattern: hi)) }
-    g.id.withUnsafeBufferPointer { id in
+    let creaseCos = creases.map { cos($0 * Double.pi / 180) }
+    let creaseNormals = creaseCos.map { creaseNormals(g, cos: $0) } ?? []
+    g.id.withUnsafeBufferPointer { id in creaseNormals.withUnsafeBufferPointer { nrm in
+        /// A crease between two samples of one region (never paper or masked).
+        @inline(__always) func folds(_ i: Int, _ j: Int) -> Bool {
+            guard let c = creaseCos, id[i] > 0 else { return false }
+            return dot3(nrm[i], nrm[j]) < c
+        }
         for y in 0..<h { for x in 0..<w {
             let i = y * w + x
-            if x + 1 < w, id[i] != id[i + 1] {
+            if x + 1 < w, id[i] != id[i + 1] || folds(i, i + 1) {
                 cracks.append(Crack(v0: Int32(y * vw + x + 1), v1: Int32((y + 1) * vw + x + 1), a: Int32(i), b: Int32(i + 1), key: key(id[i], id[i + 1])))
             }
-            if y + 1 < h, id[i] != id[i + w] {
+            if y + 1 < h, id[i] != id[i + w] || folds(i, i + w) {
                 cracks.append(Crack(v0: Int32((y + 1) * vw + x), v1: Int32((y + 1) * vw + x + 1), a: Int32(i), b: Int32(i + w), key: key(id[i], id[i + w])))
             }
         } }
-    }
+    } }
     // vertex → cracks (two linked lists: cracks starting there, cracks ending there)
     var head = [Int32](repeating: -1, count: vw * (h + 1))
     var nextA = [Int32](repeating: -1, count: cracks.count), nextB = [Int32](repeating: -1, count: cracks.count)
@@ -140,8 +157,33 @@ public func traceContours(_ g: GBuffer, weight: (Edge) -> Double) -> [Chain] {
     return chains
 }
 
+/// The normals the crease test compares. A sample whose normal was taken across a sharp edge (its central difference
+/// straddles it) has a blend of the two faces' normals, a turn short of the threshold from each, and would break the
+/// crease there. Such a sample (its two opposite neighbours, across or along, turn by more than the threshold, it by
+/// less from each) takes the nearer neighbour's normal: the edge then runs on one side of it or the other, and its
+/// cracks join up as a region boundary's do.
+func creaseNormals(_ g: GBuffer, cos c: Double) -> [V3] {
+    let w = g.w, h = g.h
+    var out = g.nrm
+    g.id.withUnsafeBufferPointer { id in g.nrm.withUnsafeBufferPointer { n in
+        for y in 0..<h { for x in 0..<w {
+            let k = y * w + x
+            let r = id[k]
+            guard r > 0 else { continue }
+            var best = c, snap: V3? = nil
+            for (a, b) in [(x > 0 && x + 1 < w ? (k - 1, k + 1) : (-1, -1)), (y > 0 && y + 1 < h ? (k - w, k + w) : (-1, -1))] where a >= 0 {
+                guard id[a] == r, id[b] == r else { continue }
+                let across = dot3(n[a], n[b]), ta = dot3(n[k], n[a]), tb = dot3(n[k], n[b])
+                if across < best && ta >= c && tb >= c { best = across; snap = ta >= tb ? n[a] : n[b] }
+            }
+            if let s = snap { out[k] = s }
+        } }
+    } }
+    return out
+}
+
 /// Traces the region boundaries with the usual rules.
-public func traceContours(_ g: GBuffer, rules: ContourRules) -> [Chain] { traceContours(g, weight: rules.weight) }
+public func traceContours(_ g: GBuffer, rules: ContourRules) -> [Chain] { traceContours(g, creases: rules.creaseAngle, weight: rules.weight) }
 
 /// Gaussian smoothing along a chain (ends pinned unless closed) so the pixel staircase becomes a drawn line.
 public func smoothChain(_ c: Chain, sigma: Double) -> Chain {

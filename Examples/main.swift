@@ -8,7 +8,8 @@ import Foundation
 var args = Array(CommandLine.arguments.dropFirst())
 var out = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("output").path
 if let i = args.firstIndex(of: "--out"), i + 1 < args.count { out = args[i + 1]; args.removeSubrange(i...(i + 1)) }
-let examples: [(String, (String) -> [(String, CGImage)])] = [("mug", drawMug), ("tree", drawTree), ("leaf", drawLeaf)]
+let examples: [(String, (String) -> [(String, CGImage)])] = [("mug", drawMug), ("tree", drawTree), ("leaf", drawLeaf),
+                                                                    ("crystal", drawCrystal)]
 if args.contains("--help") || args.contains("-h") {
     print("usage: graphite [--out dir] [\(examples.map(\.0).joined(separator: " | "))…]")
     exit(0)

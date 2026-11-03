@@ -18,12 +18,13 @@ engine on its own, with neutral examples. "Graphite" is a working name.
 ```sh
 swift build -c release
 swift run -c release graphite            # renders the examples into Examples/output/
-swift run -c release graphite mug        # or some of them: mug, tree, leaf
+swift run -c release graphite mug        # or some of them: mug, tree, leaf, crystal
 ```
 
 The examples are in [Examples/](Examples): [Mug.swift](Examples/Mug.swift) (a subject written from scratch, three views
-and a detail), [Tree.swift](Examples/Tree.swift) (a tree grown by a small brancher on the primitive scene) and
-[Leaf.swift](Examples/Leaf.swift) (a close study drawn from 2D vector shapes).
+and a detail), [Tree.swift](Examples/Tree.swift) (a tree grown by a small brancher on the primitive scene),
+[Leaf.swift](Examples/Leaf.swift) (a close study drawn from 2D vector shapes) and [Crystal.swift](Examples/Crystal.swift)
+(a faceted crystal as one region, drawn without and with creases).
 
 ## A minimal drawing
 
@@ -69,7 +70,7 @@ image: graphite colour, alpha from the graphite, trimmed to the ink → PNG
    a **region id** (`subID`) and a **material**. Region ids decide where lines go: a contour is drawn wherever two
    neighbouring samples show different regions. So a glaze line, a window, a feather patch or a plank seam is just a
    region boundary. Ids pack a part, a kind and an index (`SurfaceID.make(part, kind, index)`), so rules can be written
-   per kind.
+   per kind. A sharp edge inside one region draws nothing unless you ask for creases (below).
 2. **The render** ([Render.swift](Sources/Engine/Render.swift), [March.swift](Sources/Engine/March.swift)) marches one
    ray per sample, finds the normal by central differences, and works out the light's tone: Lambert from the light,
    softened cast shadows and contact occlusion. The material turns that into the drawn tone (its own darkness, how much
@@ -130,6 +131,12 @@ final class Lantern: Subject {
   paper, `minTone` for an underside, `stipple` for speckled stone, `fill: 1` for an opening's dark fill.
 - **Line weights**: `SketchOptions.rules` (`ContourRules`) sets silhouettes, occluding edges, creases and per-kind
   floors; a subject can also answer `edgeWeight(a, b)` for its own seams.
+- **Creases inside a region**: lines are traced where the region changes, so by default a faceted subject needs a
+  region per facet. Or set `rules.creaseAngle` (degrees; 30–45 for sharp edges, off by default): wherever the surface
+  normal turns by more than that between neighbouring samples of one region, a line of weight `rules.crease` (0.55) is
+  traced too. [Crystal.swift](Examples/Crystal.swift) draws a quartz crystal as a single region, without and with
+  them. Curved surfaces stay unlined at 20–30°; much lower, tight curves and a noisy surface begin to draw. With your
+  own weight function, `traceContours(g, creases: angle, weight:)` hands it these edges with `a == b`.
 - **Many small primitives** (a tree, a shrub): use `PrimitiveBuilder` / `PrimitiveScene` (cones, ellipsoids, tori in
   smoothly united groups with surface noise, in a uniform grid), as [Tree.swift](Examples/Tree.swift) does.
 - **Extras**: `drawView(subject, view, options) { camera, buffer, sheet, rng in … }` runs after the contours: draw 3D
