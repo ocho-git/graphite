@@ -15,7 +15,7 @@ public struct MarchSettings {
     /// Steps of the soft-shadow ray.
     public var shadowSteps: Int
     /// How hard the soft shadow's edge is: a ray that passes an occluder at distance d, t along the shadow ray, is
-    /// darkened to min(sharpness × d / t), so the penumbra is about t / sharpness wide. 9 is the field guide's.
+    /// darkened to min(sharpness × d / t), so the penumbra is about t / sharpness wide. 9 is the default.
     /// Raise it (16–32) when thin parts far from what they shade (a railing, a twig) cast wide, ghostly shadows that
     /// never darken: the penumbra narrows to the part's own width.
     public var shadowSharpness: Double

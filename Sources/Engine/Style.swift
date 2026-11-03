@@ -1,5 +1,5 @@
-// Style.swift: everything that sets the look of the pencil, in one value. `Style.standard` is the field guide's
-// look (graphite #3a3d3a, five hatch layers at 55° and −32°, a hand's wobble on every line); change a copy to make
+// Style.swift: everything that sets the look of the pencil, in one value. `Style.standard` is the default look
+// (graphite #3a3d3a, five hatch layers at 55° and −32°, a hand's wobble on every line); change a copy to make
 // another.
 
 public struct Style {
@@ -134,6 +134,6 @@ public struct Style {
 
     public init() {}
 
-    /// The field guide's look.
+    /// The default look.
     public static let standard = Style()
 }

@@ -228,7 +228,7 @@ public func footprint(_ g: GBuffer, rows: Int, _ member: (Int32) -> Bool) -> (x0
     return (Double(lo) / ss, Double(hi) / ss, Double(maxY + 1) / ss, maxY)
 }
 
-/// A ground stroke under a footprint, reaching a little past it on each side (as the field guide draws it).
+/// A ground stroke under a footprint, reaching a little past it on each side.
 public func groundStroke(on sheet: Sheet, _ g: GBuffer, under f: (x0: Double, x1: Double, y: Double), padScale: Double = 1,
                          blocked: (Int32) -> Bool, rng: inout Rng, press: Double = 1) {
     let pad = max((f.x1 - f.x0) * 0.22, 9) * padScale

@@ -25,7 +25,7 @@ public enum SurfaceID {
 ///     it paler (`tone × (1 + value)`: bleached wood stays light in the shade);
 ///   - clamped to `minTone … maxTone` (an underside is never lighter than 0.7).
 /// `stipple` scales the speckle (0 none, 1 granite), `fill` lays a soft graphite fill under the hatching (openings, a
-/// pupil: 1 = as dark as the lantern's firebox), `throughFill` a lighter one (what is seen through an opening).
+/// pupil: 1 = the darkest an opening gets), `throughFill` a lighter one (what is seen through an opening).
 public struct Material {
     public var value: Double
     public var shading: Double

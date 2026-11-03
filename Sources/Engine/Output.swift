@@ -31,7 +31,7 @@ public struct Trim {
     public init(test: Test = .graphite(0.03), pad: Double = 0.04, padding: Padding = .rounded, clampToSheet: Bool = true) {
         self.test = test; self.pad = pad; self.padding = padding; self.clampToSheet = clampToSheet
     }
-    /// The field guide's trim: ink above 3 % graphite, 4 % padding, within the sheet.
+    /// The default trim: ink above 3 % graphite, 4 % padding, within the sheet.
     public static let standard = Trim()
 }
 
