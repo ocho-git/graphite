@@ -55,14 +55,25 @@ import Foundation
     return len3(pa - ba * h) - mixd(ra, rb, h)
 }
 
-/// A tapered cylinder cut flat at both ends (a sawn post, a pruned twig): radius ra at a, rb at b.
+/// A tapered cylinder cut flat at both ends (a sawn post, a pruned twig, a roof): radius ra at a, rb at b. iq's exact
+/// capped cone: the distance to the nearest point of the surface however steep the taper (its gradient is 1).
 @inlinable public func sdCappedCone(_ p: V3, _ a: V3, _ b: V3, _ ra: Double, _ rb: Double) -> Double {
-    let ba = b - a, L = len3(ba), d = ba / L
+    let rba = rb - ra
+    let ba = b - a
+    let baba = max(dot3(ba, ba), 1e-18)
     let pa = p - a
-    let u = dot3(pa, d)
-    let rho = len3(pa - d * u)
-    let dx = rho - mixd(ra, rb, clampd(u / L, 0, 1)), dy = max(-u, u - L)
-    return min(max(dx, dy), 0) + len2(V2(max(dx, 0), max(dy, 0)))
+    let papa = dot3(pa, pa)
+    let paba = dot3(pa, ba) / baba                                  // along the axis, 0 at a … 1 at b
+    let x = max(papa - paba * paba * baba, 0).squareRoot()         // from the axis
+    // the nearer cap, then the slanted side; across in world units, along in units of |b − a|
+    let cax = max(0, x - (paba < 0.5 ? ra : rb))
+    let cay = abs(paba - 0.5) - 0.5
+    let k = rba * rba + baba
+    let f = clampd((rba * (x - ra) + paba * baba) / k, 0, 1)
+    let cbx = x - ra - f * rba
+    let cby = paba - f
+    let s: Double = (cbx < 0 && cay < 0) ? -1 : 1
+    return s * min(cax * cax + cay * cay * baba, cbx * cbx + cby * cby * baba).squareRoot()
 }
 
 /// A torus round the z axis: ring radius R, tube radius r.
