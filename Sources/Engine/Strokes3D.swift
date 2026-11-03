@@ -25,13 +25,14 @@ public struct Stroke3D {
 }
 
 /// Is a world point seen? Off the buffer and on paper count as seen; else it must lie no more than `tol` behind the
-/// surface the buffer holds there.
+/// surface the buffer holds there. The depth is the buffer's own (`Camera.depth`: along the ray, which in a parallel
+/// view is the distance from the picture plane, not from the camera's position), as in `GBuffer.isVisible`.
 @inlinable @inline(__always) public func visible(_ P: V3, _ s: V2, _ cam: Camera, _ g: GBuffer, tol: Double) -> Bool {
     let gx = Int(s.x * Double(g.ss)), gy = Int(s.y * Double(g.ss))
     guard gx >= 0, gy >= 0, gx < g.w, gy < g.h else { return true }
     let k = gy * g.w + gx
     if g.id[k] == 0 { return true }
-    return Double(g.depth[k]) >= len3(P - cam.pos) - tol
+    return Double(g.depth[k]) >= cam.depth(P) - tol
 }
 
 /// Draws 3D strokes: resampled every ~3 px so they wobble and are hidden piece by piece.
@@ -60,8 +61,9 @@ public func drawStrokes3D(_ strokes: [Stroke3D], _ cam: Camera, _ g: GBuffer, on
             if let pv = prev { arc += len2(s2 - pv) }
             prev = s2
             if !visible(P[i], s2, cam, g, tol: s.tol) { flush(); continue }
+            // as wide as the thing it draws (a parallel view: f pixels per world unit, whatever the depth)
             let z = dot3(P[i] - cam.pos, cam.fwd)
-            let wpx = clampd(2 * R[i] * cam.f / max(z, 1e-6), s.pxMin, s.pxMax)
+            let wpx = clampd(cam.ortho ? 2 * R[i] * cam.f : 2 * R[i] * cam.f / max(z, 1e-6), s.pxMin, s.pxMax)
             var q = s2
             if s.wobble > 0 {
                 // a hand's wobble across the line
