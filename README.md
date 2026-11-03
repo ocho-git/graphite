@@ -44,6 +44,11 @@ writePNG(view.image, to: "pebble.png")
 parent: view, target:, radius:)` draws a closer study of a point of a view and tells you where to ring it on the
 parent.
 
+`ShapeSubject` is the quickest way to write a shape of a few parts: closures, no class. It draws as fast as the same
+shape written as a class (the mug: 0.35 s either way). Keep its closures' captures strong: an `[unowned x]` or
+`[weak x]` capture costs a reference count on every call, from every core, and that alone can make a drawing a hundred
+times slower. For many parts, regions with rules of their own or the optional answers below, write a class.
+
 ## How it works
 
 ```
@@ -174,6 +179,10 @@ Line weights per kind (silhouettes, occluding edges, creases, seams) are not sty
 - The cost is almost all in `sceneSDF`. Give every part a bounding box and skip it when the box is farther than the
   best distance so far (see `ShapeSubject.sceneSDF`); for thousands of primitives use `PrimitiveScene`, which buckets
   them in a grid.
+- Keep reference counting out of `sceneSDF`. It runs on every core at once, and a retain and release of a shared
+  object (a class captured `unowned` or `weak`, an array or closure read from a `var` and copied) on every call
+  bounces one counter between the cores: the mug as a `ShapeSubject` once took 46–58 s that way, against 0.35 s as a
+  class. `ShapeSubject` now reads its parts from plain memory and takes 0.35 s too.
 - Shadows and occlusion dominate the shading: `ShadeSharing.perPixel` (the `drawView` default) shades one sample per
   pixel and lets the others borrow it when they show the same region; `.perPart` and `.byNormal` share within a pixel
   by part or by facing.

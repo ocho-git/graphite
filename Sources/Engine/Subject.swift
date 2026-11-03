@@ -81,7 +81,10 @@ extension Subject {
     public func willRender(unit: Double, camera: Camera, light: V3) {}
 }
 
-/// A subject made of closures: the quickest way to draw one shape. Parts are numbered in the order given.
+/// A subject made of closures: the quickest way to write one shape, a few parts, no class. Parts are numbered in the
+/// order given; add them all before drawing. It draws close to the speed of a class subject (see README,
+/// Performance); keep the closures' captures strong (`[unowned x]` or `[weak x]` costs a reference count on every
+/// call, from every thread).
 public final class ShapeSubject: Subject {
     public struct Part {
         public var lo: V3, hi: V3
@@ -96,36 +99,82 @@ public final class ShapeSubject: Subject {
             self.material = material ?? { _, _, _ in .plain }
         }
     }
+
+    /// One part's closures, kept alive by the subject (`owners`).
+    @usableFromInline final class Closures {
+        @usableFromInline let sdf: (V3) -> Double
+        @usableFromInline let region: (V3, V3) -> Int32
+        @usableFromInline let material: (Int32, V3, V3) -> Material
+        init(_ p: Part) { sdf = p.sdf; region = p.region; material = p.material }
+    }
+    /// A part as the march reads it: its box and its closures, unretained.
+    @usableFromInline struct Slot {
+        @usableFromInline var lo: V3, hi: V3
+        @usableFromInline var closures: Unmanaged<Closures>
+    }
+    /// The slots, in plain memory behind a `let` pointer. A render calls the distance millions of times from every
+    /// core. Read from the parts array, each call retained and released the array's buffer and the closure's context;
+    /// those shared reference counts, bounced between the cores, made a ShapeSubject about 100 times slower than the
+    /// same shape as a class. Read from here, a call costs no reference count and no exclusivity check.
+    @usableFromInline struct Table {
+        @usableFromInline var count: Int
+        @usableFromInline var slots: UnsafeMutablePointer<Slot>?
+    }
+    @usableFromInline let table: UnsafeMutablePointer<Table>
+    private var owners: [Closures] = []
+
     public private(set) var parts: [Part] = []
     public private(set) var lo = V3(repeating: 1e9), hi = V3(repeating: -1e9)
     public var groundPlane: Double? = 0
-    public init() {}
-    /// Adds a part; a region closure returning 0 gets the part's own default region (part i, kind 0).
+    public init() {
+        table = .allocate(capacity: 1)
+        table.initialize(to: Table(count: 0, slots: nil))
+    }
+    deinit {
+        table.pointee.slots?.deallocate()
+        table.deinitialize(count: 1)
+        table.deallocate()
+    }
+    /// Adds a part; a region closure returning 0 gets the part's own default region (part i, kind 0). Not while the
+    /// subject is being drawn.
     @discardableResult public func add(_ p: Part) -> Int {
         parts.append(p)
         lo = V3(min(lo.x, p.lo.x), min(lo.y, p.lo.y), min(lo.z, p.lo.z)); hi = V3(max(hi.x, p.hi.x), max(hi.y, p.hi.y), max(hi.z, p.hi.z))
-        return parts.count - 1
+        let c = Closures(p)
+        owners.append(c)
+        let n = parts.count
+        let slots = UnsafeMutablePointer<Slot>.allocate(capacity: n)
+        if let old = table.pointee.slots { slots.initialize(from: old, count: n - 1); old.deallocate() }
+        (slots + (n - 1)).initialize(to: Slot(lo: p.lo, hi: p.hi, closures: Unmanaged.passUnretained(c)))
+        table.pointee = Table(count: n, slots: slots)
+        return n - 1
     }
     public var bounds: (lo: V3, hi: V3) { (lo, hi) }
     public var partCount: Int { parts.count }
     public var groundZ: Double? { groundPlane }
-    public func sceneSDF(_ p: V3) -> (Double, Int) {
+    @inlinable public func sceneSDF(_ p: V3) -> (Double, Int) {
         var best = 1e9, idx = -1
-        for i in 0..<parts.count {
-            if boxDist(p, parts[i].lo, parts[i].hi) >= best { continue }
-            let d = parts[i].sdf(p)
+        let t = table.pointee
+        guard let s = t.slots else { return (best, idx) }
+        for i in 0..<t.count {
+            let slot = s[i]
+            if boxDist(p, slot.lo, slot.hi) >= best { continue }
+            let d = slot.closures._withUnsafeGuaranteedRef { $0.sdf(p) }
             if d < best { best = d; idx = i }
         }
         return (best, idx)
     }
-    public func partSDF(_ i: Int, _ p: V3) -> Double { parts[i].sdf(p) }
-    public func subID(_ i: Int, _ p: V3, _ n: V3) -> Int32 {
-        let r = parts[i].region(p, n)
+    @inlinable public func partSDF(_ i: Int, _ p: V3) -> Double {
+        table.pointee.slots![i].closures._withUnsafeGuaranteedRef { $0.sdf(p) }
+    }
+    @inlinable public func subID(_ i: Int, _ p: V3, _ n: V3) -> Int32 {
+        let r = table.pointee.slots![i].closures._withUnsafeGuaranteedRef { $0.region(p, n) }
         return r == 0 ? SurfaceID.make(i, 0) : r
     }
-    public func material(_ id: Int32, _ p: V3, _ n: V3) -> Material {
+    @inlinable public func material(_ id: Int32, _ p: V3, _ n: V3) -> Material {
         let i = SurfaceID.part(id)
-        return i >= 0 && i < parts.count ? parts[i].material(id, p, n) : .plain
+        let t = table.pointee
+        return i >= 0 && i < t.count ? t.slots![i].closures._withUnsafeGuaranteedRef { $0.material(id, p, n) } : .plain
     }
     public func grounded(_ i: Int) -> Bool { parts[i].grounded }
 }
