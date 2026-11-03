@@ -59,6 +59,8 @@ public final class Sheet {
             for i in 0..<(p.count - 1) {
                 let a = p[i], b = p[i + 1]
                 let ra = wid[i] / 2, rb = wid[i + 1] / 2
+                // a segment through a non-finite point or width draws nothing (and must not be rasterised)
+                if !(a.x.isFinite && a.y.isFinite && b.x.isFinite && b.y.isFinite && ra.isFinite && rb.isFinite) { continue }
                 let rmax = max(ra, rb) + 1
                 let x0 = Int((min(a.x, b.x) - rmax).rounded(.down)), x1 = Int((max(a.x, b.x) + rmax).rounded(.up))
                 let y0 = Int((min(a.y, b.y) - rmax).rounded(.down)), y1 = Int((max(a.y, b.y) + rmax).rounded(.up))
