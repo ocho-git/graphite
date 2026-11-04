@@ -2,8 +2,13 @@
 
 A pencil-drawing engine in Swift. You describe an object as a 3D signed-distance model; Graphite ray-marches it and
 draws what it sees the way a hand draws with a soft pencil: traced contours with a wobble and tapered ends, hatching
-for the shade, a sparse stipple, a short stroke on the ground, all laid through the tooth of the paper. The output is
-graphite on a transparent background, trimmed to its ink.
+for the shade, a sparse stipple, a short stroke on the ground, all laid through the tooth of the paper. It draws in
+graphite or in [coloured pencils](#coloured-pencils). The output is the drawing on a transparent background, trimmed
+to its ink.
+
+Graphite owns the *look*; whoever writes the model owns the *likeness*. You don't type "a heron": you (or an AI model
+writing Swift for you) build the heron's shape, and the engine draws it. [Drawing with an AI model](#drawing-with-an-ai-model)
+and [AGENTS.md](AGENTS.md) describe the loop that gets good results.
 
 ![A gallery of drawings made with Graphite](Examples/output/gallery.jpg)
 
@@ -46,6 +51,12 @@ Mushrooms from a low eye, gills and spots as regions; a boulder and its stones, 
 One vase, one view, four hands: the standard style, an ink-like one, a light and sketchy one, and dense hatching
 (see [The Style](#the-style)).
 
+![Eight of the gallery's subjects in coloured pencils](Examples/output/colour.jpg)
+
+The same models in coloured pencils (`Style.colouredPencil` and a palette per subject, in
+[Colour.swift](Examples/Gallery/Colour.swift)): each region's own pencil laid in one direction, crossed by a cool shade
+pencil where the light falls away, outlines in a deeper shade of the region they border.
+
 ## Quick start
 
 ```sh
@@ -53,13 +64,14 @@ git clone https://github.com/ocho-git/graphite.git
 cd graphite
 swift build -c release
 swift run -c release graphite              # renders every example into Examples/output/
-swift run -c release graphite mug gallery  # or some of them: mug, tree, leaf, crystal, gallery, styles
+swift run -c release graphite mug gallery  # or some of them: mug, book, tree, leaf, crystal, gallery, styles, colour
 ```
 
 Each drawing is written as a PNG (graphite on a transparent background) and as a JPEG preview on paper.
 
 The examples are in [Examples/](Examples): [Mug.swift](Examples/Mug.swift) (a subject written from scratch, three views
-and a detail), [Tree.swift](Examples/Tree.swift) (a tree grown by `Brancher` on the primitive scene),
+and a detail), [Book.swift](Examples/Book.swift) (a few boxes and their regions, drawn as a turnaround in graphite and
+in colour), [Tree.swift](Examples/Tree.swift) (a tree grown by `Brancher` on the primitive scene),
 [Leaf.swift](Examples/Leaf.swift) (a close study drawn from 2D vector shapes), [Crystal.swift](Examples/Crystal.swift)
 (a faceted crystal as one region, without and with creases) and the [gallery](Examples/Gallery).
 
@@ -98,6 +110,43 @@ shape written as a class. Keep its closures' captures strong: an `[unowned x]` o
 count on every call, from every core, and that alone can make a drawing a hundred times slower. For many parts, or the
 optional answers below, write a class.
 
+## Drawing with an AI model
+
+Graphite needs a model, not a word. A language model that writes Swift is a good way to get one: most of the gallery,
+and a field guide of some 200 drawings, were made that way. The split is clean:
+
+- **The look is the engine's.** Lines, hatching, paper and colour come out the same whoever wrote the model.
+- **The likeness is the model writer's.** Proportions, parts, the features that make it *this* thing. A stronger model
+  gets more of it right the first time, most of all for living things (a bird's posture, a tree's branching). For
+  simple objects (a book, a mug, a pebble) most capable models do fine.
+
+What matters as much as which model: **a loop with eyes**, and **reference**.
+
+1. **Brief**: the subject, its real size and proportions (from a source, not from memory), the 3–5 features that make
+   it recognisable, the views and how large they'll be shown.
+2. **Model** the silhouette in true proportions from a few primitives.
+3. **Render a turnaround**: `turnaround(subject)` draws it from the front, the side, three-quarter and above on one
+   sheet. Look at it.
+4. **Critique against the brief** in words: does it read at a glance? Are the proportions right? Anything floating or
+   missing? A line everywhere one belongs?
+5. **Fix and render again**, with the same seed. Two to four rounds is normal. Then the details and close-ups.
+
+![A book from four sides, the sheet the loop looks at](Examples/output/book-turnaround.jpg)
+
+[Book.swift](Examples/Book.swift) is "a book" written this way, in three rounds:
+1. **Round one** read as a box with paper in it.
+2. **Round two** pressed in the hinge groove along the spine, which is what makes a hardcover look like one. It drew
+   nothing: too shallow to make a line from its depth.
+3. **Round three** made the groove a region of its own, and the line appeared, because a line is drawn wherever the
+   region changes.
+
+That's the kind of thing the loop catches and a single pass doesn't.
+
+[AGENTS.md](AGENTS.md) has the whole guide: the loop, rules of thumb (every line is a region boundary; nothing thinner
+than two pixels as a distance field; darkness is a material, not a style; a close-up is a closer study, not a crop),
+and a brief to hand a model. Coding agents that read `AGENTS.md` (or `CLAUDE.md`, which points to it) pick it up when
+they open the repository.
+
 ## How it works
 
 ```
@@ -107,10 +156,10 @@ Subject (distance field, regions, materials)
 GBuffer (per sample: region id, depth, normal, tone, stipple, fills)
    │  ToneMap: averaged to drawn pixels
    ▼
-the pencil, onto a Sheet (graphite 0…1 per pixel, the paper's grain)
+the pencil, onto a Sheet (graphite 0…1 per pixel, the paper's grain; in colour, what its pencils absorb)
    openings → hatching → stipple → contours → your extras → ground strokes
    ▼
-image: graphite colour, alpha from the graphite, trimmed to the ink → PNG
+image: graphite colour, alpha from the graphite (or the pencils' mix), trimmed to the ink → PNG
 ```
 
 1. **The subject** ([Subject.swift](Sources/Engine/Subject.swift)) is a signed-distance scene split into parts. For
@@ -150,7 +199,9 @@ image: graphite colour, alpha from the graphite, trimmed to the ink → PNG
    shapes with a tone (lit from the upper left), give them outlines and veins, and the same hatching, stipple and line
    drawing turn them into pencil.
 7. **Output** ([Output.swift](Sources/Engine/Output.swift)): graphite colour #3a3d3a with alpha
-   `clamp(graphite^0.92 × 0.9)`, premultiplied sRGB, trimmed to the ink with 4 % padding.
+   `clamp(graphite^0.92 × 0.9)`, premultiplied sRGB, trimmed to the ink with 4 % padding. In colour, each pixel's
+   light let through by its pencils (`exp(−absorbance)` per channel), written as the premultiplied colour that lays
+   exactly that over white paper.
 
 ## Adding a subject
 
@@ -253,7 +304,49 @@ the default look. Pass a changed copy in `SketchOptions.style` (or to `Sheet(w:h
 | `fill.opening`, `fill.through` | 0.42, 0.2 (+ grain) | the soft fills of openings and of what is seen through them |
 | `ground.width`, `ground.pressure…`, `ground.sway…` | 1.6 px, … | the ground stroke |
 
+| `colour` | nil | coloured pencils (see below); nil draws in graphite |
+| `HatchLayer.ink` | `.local(1)` | in colour, the pencil a hatch layer lays: the region's own (`.local(k)`, k times over), the shade pencil, or a fixed one |
+
 Line weights per kind (silhouettes, occluding edges, creases, seams) are not style but rules: `ContourRules`.
+
+## Coloured pencils
+
+![Mushrooms, a lighthouse and books, in graphite and in coloured pencils](Examples/output/colour-and-graphite.jpg)
+
+Give the drawing `Style.colouredPencil` and a palette: each region's own pencil, by its id.
+
+```swift
+var o = SketchOptions()
+o.style = .colouredPencil
+o.palette = { id in
+    switch SurfaceID.kind(id) {
+    case Kind.cap.rawValue:  return Pigment(hex: 0xC9452F)
+    case Kind.stem.rawValue: return Pigment(hex: 0xEDE2C8)
+    default:                 return nil          // the style's fallback pencil
+    }
+}
+let d = drawView(mushrooms, view, o)
+```
+
+- **Pencils mix like pigment.** Beside its graphite, a coloured sheet keeps what each pixel's pencils absorb, per
+  channel. A pencil adds its absorbance (`−ln` of its colour) by as much graphite as it laid, so yellow over blue gives
+  green, a pencil over itself deepens, and once the paper's tooth fills up a layer adds less. `Pigment` has
+  `deepened(k)` (laid k times) and `mixed(_:_:)`.
+- **The passes pick their pencils** from `Style.Colour`:
+
+| knob | default | what it does |
+| --- | --- | --- |
+| `hatching.layers[i].ink` | own ×1, own ×1, shade, own ×1.8, own ×2.6 | the preset's five layers: the region's colour over all of it (paper left at the brightest lights), again in the half-tones, the shade pencil crossing it, then deeper |
+| `shade` | a cool violet grey | the shade pencil |
+| `line`, `lineShade` | `.local(2.6)`, 0.25 | a line is its region's pencil deepened, with a quarter of the shade pencil in it (the darker region where two meet) |
+| `stipple`, `opening` | `.local(2.2)`, `.local(2.4)` | the speckle and openings' fill |
+| `ground` | a warm grey | the ground strokes |
+| `fallback` | a warm grey | regions the palette leaves out |
+
+- The preset also sets a coarser tooth, longer and closer dashes, and a wider pressure ramp, so the colour builds up
+  with the tone.
+- Greys and very pale colours come out pale: choose a pencil a shade deeper than the colour you want to see.
+- Drawings in graphite are unchanged by all of this; the examples render byte for byte as before.
 
 ## Performance
 

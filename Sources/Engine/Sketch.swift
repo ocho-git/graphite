@@ -270,3 +270,25 @@ public func drawGroundStrokes<S: Subject>(_ s: S, _ cam: Camera, _ g: GBuffer, _
         groundStroke(on: sheet, g, under: (f.x0, f.x1, f.y), blocked: { SurfaceID.part($0) != i }, rng: &rng)
     }
 }
+
+/// A subject from four sides on one labelled sheet: front, side, three-quarter and from above, each fitted to a `cell`
+/// px square. The quickest check while a model is being written: render it, look, fix, render again. A view that drew
+/// nothing says why in its label.
+public func turnaround<S: Subject>(_ s: S, _ o: SketchOptions = SketchOptions(), cell: Int = 420) -> CGImage {
+    let b = s.bounds
+    let size = max(b.hi.x - b.lo.x, b.hi.y - b.lo.y, b.hi.z - b.lo.z)
+    let eye = b.lo.z + (b.hi.z - b.lo.z) * 0.6
+    let views: [(String, View)] = [
+        ("front", .elevation(az: -Double.pi / 2, eyeZ: eye, dist: size * 4)),
+        ("side", .elevation(az: 0, eyeZ: eye, dist: size * 4)),
+        ("three-quarter", .threeQuarter(az: -Double.pi / 2 + 0.7, elev: 25, dist: size * 4)),
+        ("from above", .plan(up: Double.pi / 2)),
+    ]
+    let items = views.map { label, v -> (label: String, image: CGImage) in
+        var vo = o
+        if case .plan = v { vo.groundStrokes = false }
+        let d = drawView(s, v, vo)
+        return (d.error.map { "\(label): \($0)" } ?? label, d.image)
+    }
+    return contactSheet(items, cell: cell, columns: 4)
+}

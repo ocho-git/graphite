@@ -8,6 +8,9 @@ xcuserdata/
 Examples/output/*
 !Examples/output/gallery.jpg
 !Examples/output/styles.jpg
+!Examples/output/colour.jpg
+!Examples/output/colour-and-graphite.jpg
+!Examples/output/book-turnaround.jpg
 !Examples/output/mug-front.jpg
 !Examples/output/mug-handle.jpg
 !Examples/output/crystal.jpg

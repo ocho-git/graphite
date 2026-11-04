@@ -24,7 +24,7 @@ let colourPalettes: [String: (Int32) -> Pigment?] = [
                        VesselKind.inside.rawValue: 0x3E6E9E, VesselKind.cork.rawValue: 0xB89062]),
     "books": palette([1: 0xF2EAD6, 2: 0xEDE3C8], byPart: [0: [0x8C2F2B, 0x2F4570, 0x47693F, 0xC9922F, 0x3D6E73, 0x6B3B5E]]),
     "tree": palette([TreePart.bark.rawValue: 0x6E5643, TreePart.leaves.rawValue: 0x6C9A3E]),
-    "boulder": palette([0: 0x9A958A, 1: 0x7E9A45]),
+    "boulder": palette([0: 0x857F74, 1: 0x6F8C3A]),
     "pebbles": palette([:], byPart: [0: [0xA79C8C, 0x8C8F92, 0xB5A48A, 0x7F8577, 0xC2B6A2, 0x96887A]]),
 ]
 
