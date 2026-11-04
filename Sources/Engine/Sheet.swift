@@ -11,12 +11,20 @@ public final class Sheet {
     public var grain: [Float]
     public var base: [Float], smax: [Float], sid: [Int32]
     public var cur: Int32 = 0
+    /// Coloured drawings (the style has `colour`): what each pixel's pencils absorb, three floats a pixel (red, green,
+    /// blue); empty in graphite. Graphite still counts in `acc`, so every layer fills the paper's tooth.
+    public var absorb: [Float]
+    /// Coloured drawings: each region's own pencil (nil: the style's fallback), and the pencil in hand.
+    public var palette: ((Int32) -> Pigment?)? = nil
+    public var ink: Pigment? = nil
+    public var isColour: Bool { style.colour != nil }
 
     /// A blank sheet; `seed` places the paper's grain.
     public init(w: Int, h: Int, seed: Double, style: Style = .standard) {
         self.w = w; self.h = h; self.style = style
         acc = Array(repeating: 0, count: w * h); base = acc; smax = acc
         sid = Array(repeating: -1, count: w * h)
+        absorb = style.colour == nil ? [] : Array(repeating: 0, count: w * h * 3)
         var grain = [Float](repeating: 0, count: w * h)
         let gs = style.paper.grainScale
         grain.withUnsafeMutableBufferPointer { gB in
@@ -37,13 +45,36 @@ public final class Sheet {
     /// Starts a new stroke: what it deposits from now on never darkens a pixel twice.
     public func begin() { cur += 1 }
 
+    /// The pencil an ink is for a region (coloured drawings).
+    public func pigment(_ ink: Ink, _ id: Int32) -> Pigment {
+        let C = style.colour ?? Style.Colour()
+        switch ink {
+        case .local(let k):
+            let own = (id > 0 ? palette?(id) : nil) ?? C.fallback
+            return k == 1 ? own : own.deepened(k)
+        case .shade: return C.shade
+        case .fixed(let p): return p
+        }
+    }
+
+    /// The pencil in hand's absorbance (the style's fallback when none is).
+    @inline(__always) func inkAbsorbance() -> (Float, Float, Float) {
+        let a = (ink ?? style.colour?.fallback ?? Pigment(0.23, 0.24, 0.23)).absorbance
+        return (Float(a.0), Float(a.1), Float(a.2))
+    }
+
     /// Lays graphite v (0 … 1) on a pixel, as part of the current stroke.
     @inline(__always) public func deposit(_ x: Int, _ y: Int, _ v: Float) {
         guard x >= 0, y >= 0, x < w, y < h, v > 0.002 else { return }
         let i = y * w + x
         if sid[i] != cur { sid[i] = cur; base[i] = acc[i]; smax[i] = v }
         else if v > smax[i] { smax[i] = v } else { return }
+        let was = acc[i]
         acc[i] = base[i] + smax[i] * (1 - base[i])
+        if !absorb.isEmpty {
+            let a = inkAbsorbance(), d = acc[i] - was
+            absorb[i * 3] += d * a.0; absorb[i * 3 + 1] += d * a.1; absorb[i * 3 + 2] += d * a.2
+        }
     }
 
     /// One pencil stroke through the points: round-capped segments whose width (px) and pressure (0 … 1) vary along
@@ -53,6 +84,9 @@ public final class Sheet {
         begin()
         let w = self.w, h = self.h, cur = self.cur
         let tb = style.paper.toothBase, tp = style.paper.toothPressure
+        let colour = !absorb.isEmpty
+        let ia = inkAbsorbance()
+        absorb.withUnsafeMutableBufferPointer { abB in
         acc.withUnsafeMutableBufferPointer { aB in base.withUnsafeMutableBufferPointer { bB in smax.withUnsafeMutableBufferPointer { mB in
         sid.withUnsafeMutableBufferPointer { iB in grain.withUnsafeBufferPointer { gB in
             let accP = aB.baseAddress!, baseP = bB.baseAddress!, smaxP = mB.baseAddress!, sidP = iB.baseAddress!, grainP = gB.baseAddress!
@@ -85,10 +119,16 @@ public final class Sheet {
                     guard v > 0.002 else { continue }
                     if sidP[k] != cur { sidP[k] = cur; baseP[k] = accP[k]; smaxP[k] = v }
                     else if v > smaxP[k] { smaxP[k] = v } else { continue }
+                    let was = accP[k]
                     accP[k] = baseP[k] + smaxP[k] * (1 - baseP[k])
+                    if colour {
+                        // the pencil in hand takes its share of the light by what it added (a filled tooth takes little)
+                        let d = accP[k] - was
+                        abB[k * 3] += d * ia.0; abB[k * 3 + 1] += d * ia.1; abB[k * 3 + 2] += d * ia.2
+                    }
                 } }
             }
-        } } } } }
+        } } } } } }
     }
 
     /// A dot of radius r (px).
@@ -102,7 +142,10 @@ public final class Sheet {
     }
 
     /// Multiplies the graphite by a mask (one value per pixel).
-    public func applyMask(_ m: [Float]) { for i in 0..<(w * h) { acc[i] *= m[i] } }
+    public func applyMask(_ m: [Float]) {
+        for i in 0..<(w * h) { acc[i] *= m[i] }
+        if !absorb.isEmpty { for i in 0..<(w * h) { absorb[i * 3] *= m[i]; absorb[i * 3 + 1] *= m[i]; absorb[i * 3 + 2] *= m[i] } }
+    }
 
     /// Fades the drawing out in a loose circle of radius R round the sheet's centre (a detail's frame).
     public func fadeCircle(radius R: Double) {
@@ -113,6 +156,7 @@ public final class Sheet {
             let edge = R * (0.96 + 0.06 * (vnoise(V2(a * 1.6 + 7, 2)) - 0.5) * 2 + 0.025 * (vnoise(V2(a * 6.0, 9)) - 0.5) * 2)
             let f = 1 - sstep(edge * 0.90, edge, len2(d))
             acc[y * w + x] *= Float(f)
+            if !absorb.isEmpty { let i = (y * w + x) * 3; absorb[i] *= Float(f); absorb[i + 1] *= Float(f); absorb[i + 2] *= Float(f) }
         } }
     }
 

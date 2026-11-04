@@ -1,6 +1,7 @@
 // Style.swift: everything that sets the look of the pencil, in one value. `Style.standard` is the default look
 // (graphite #3a3d3a, five hatch layers at 55° and −32°, a hand's wobble on every line); change a copy to make
 // another.
+import Foundation
 
 public struct Style {
     /// The pencil's colour and how deposited graphite turns into ink: alpha = clamp(pow(graphite, gamma) × opacity).
@@ -62,9 +63,12 @@ public struct Style {
     public struct HatchLayer {
         public var angle: Double, spacing: Double, phase: Double, threshold: Double
         public var pressureMin: Double, pressureMax: Double, width: Double
-        public init(angle: Double, spacing: Double, phase: Double, threshold: Double, pressureMin: Double, pressureMax: Double, width: Double) {
+        /// The pencil this layer lays in a coloured drawing (ignored in graphite).
+        public var ink: Ink
+        public init(angle: Double, spacing: Double, phase: Double, threshold: Double, pressureMin: Double, pressureMax: Double, width: Double,
+                    ink: Ink = .local(1)) {
             self.angle = angle; self.spacing = spacing; self.phase = phase; self.threshold = threshold
-            self.pressureMin = pressureMin; self.pressureMax = pressureMax; self.width = width
+            self.pressureMin = pressureMin; self.pressureMax = pressureMax; self.width = width; self.ink = ink
         }
     }
 
@@ -124,7 +128,25 @@ public struct Style {
         public init() {}
     }
 
+    /// Coloured pencils: which pencil each pass lays, where the drawing's palette (SketchOptions.palette) gives each
+    /// region its own colour. nil, the default: graphite.
+    public struct Colour {
+        /// The pencil for regions the palette leaves out.
+        public var fallback = Pigment(0.55, 0.53, 0.50)
+        /// The cool pencil laid over the shade (`Ink.shade`).
+        public var shade = Pigment(0.50, 0.46, 0.66)
+        /// Lines: the region's own pencil deepened, with this share of the shade pencil mixed in.
+        public var line: Ink = .local(2.6)
+        public var lineShade: Double = 0.25
+        public var stipple: Ink = .local(2.2)
+        public var opening: Ink = .local(2.4)
+        /// The ground strokes' pencil.
+        public var ground = Pigment(0.62, 0.56, 0.48)
+        public init() {}
+    }
+
     public var pencil = Pencil()
+    public var colour: Colour? = nil
     public var paper = Paper()
     public var line = Line()
     public var hatching = Hatching()
@@ -136,4 +158,57 @@ public struct Style {
 
     /// The default look.
     public static let standard = Style()
+
+    /// Coloured pencils on a toothy paper: the region's own colour laid in one direction over the whole of it (paper
+    /// left at the brightest lights), deepened and crossed by a cool shade pencil where the light falls away, lines in
+    /// a deeper shade of their region. Give the drawing a palette (SketchOptions.palette).
+    public static let colouredPencil: Style = {
+        var s = Style()
+        s.colour = Colour()
+        s.paper.toothBase = 0.18; s.paper.toothPressure = 0.5; s.paper.grainScale = 1.25
+        s.line.widthMin = 0.7; s.line.widthRange = 1.4
+        s.line.pressureMin = 0.34; s.line.pressureRange = 0.72
+        s.hatching.layers = [
+            HatchLayer(angle: 58, spacing: 2.8, phase: 0.0, threshold: -0.02, pressureMin: 0.24, pressureMax: 0.58, width: 1.7, ink: .local(1)),
+            HatchLayer(angle: 58, spacing: 2.8, phase: 0.5, threshold: 0.28, pressureMin: 0.16, pressureMax: 0.52, width: 1.6, ink: .local(1)),
+            HatchLayer(angle: -30, spacing: 3.2, phase: 0.2, threshold: 0.44, pressureMin: 0.14, pressureMax: 0.50, width: 1.5, ink: .shade),
+            HatchLayer(angle: 58, spacing: 2.9, phase: 0.25, threshold: 0.60, pressureMin: 0.18, pressureMax: 0.56, width: 1.5, ink: .local(1.8)),
+            HatchLayer(angle: -30, spacing: 3.2, phase: 0.7, threshold: 0.78, pressureMin: 0.22, pressureMax: 0.60, width: 1.5, ink: .local(2.6)),
+        ]
+        s.hatching.ramp = 0.5
+        s.hatching.dashMin = 30; s.hatching.dashMax = 90; s.hatching.gapMin = 1; s.hatching.gapMax = 3.5
+        s.hatching.lineJitter = 0.5
+        s.stipple.density = 0.006
+        return s
+    }()
+}
+
+/// A coloured pencil: its colour laid at full pressure on white paper (sRGB, 0 … 1). Layers mix as pigments do:
+/// each absorbs its share of the light (yellow over blue is green, a pencil over itself deepens).
+public struct Pigment {
+    public var r: Double, g: Double, b: Double
+    public init(_ r: Double, _ g: Double, _ b: Double) { self.r = r; self.g = g; self.b = b }
+    /// From a hex number, 0xRRGGBB.
+    public init(hex: Int) { self.init(Double((hex >> 16) & 255) / 255, Double((hex >> 8) & 255) / 255, Double(hex & 255) / 255) }
+    /// How much of each channel's light a full layer takes (−ln of the colour).
+    @inlinable public var absorbance: (Double, Double, Double) {
+        (-log(max(r, 0.02)), -log(max(g, 0.02)), -log(max(b, 0.02)))
+    }
+    /// The same pencil laid k times over.
+    public func deepened(_ k: Double) -> Pigment { Pigment(pow(max(r, 0.02), k), pow(max(g, 0.02), k), pow(max(b, 0.02), k)) }
+    /// Mixed with another pencil (t of it), as the two would layer.
+    public func mixed(_ o: Pigment, _ t: Double) -> Pigment {
+        let a = absorbance, c = o.absorbance
+        return Pigment(exp(-(a.0 * (1 - t) + c.0 * t)), exp(-(a.1 * (1 - t) + c.1 * t)), exp(-(a.2 * (1 - t) + c.2 * t)))
+    }
+}
+
+/// Which pencil a pass lays in a coloured drawing.
+public enum Ink {
+    /// The region's own colour (from the palette), laid k times over.
+    case local(Double)
+    /// The style's shade pencil.
+    case shade
+    /// A pencil of its own.
+    case fixed(Pigment)
 }

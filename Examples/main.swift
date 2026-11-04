@@ -1,6 +1,6 @@
 // main.swift: renders the examples.
 //   swift run -c release graphite                     all of them, into Examples/output/
-//   swift run -c release graphite mug tree            some of them (mug, tree, leaf, crystal, gallery, styles)
+//   swift run -c release graphite mug tree            some of them (mug, tree, leaf, crystal, gallery, styles, colour)
 //   swift run -c release graphite --out <dir> leaf    somewhere else
 // Each drawing is written as a PNG (graphite on a transparent background) and a JPEG preview on paper (see
 // Previews.swift); the gallery and its styles go into gallery/, with their contact sheets gallery.jpg and styles.jpg.
@@ -11,7 +11,7 @@ var args = Array(CommandLine.arguments.dropFirst())
 var out = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("output").path
 if let i = args.firstIndex(of: "--out"), i + 1 < args.count { out = args[i + 1]; args.removeSubrange(i...(i + 1)) }
 let examples: [(String, (String) -> [(String, CGImage)])] = [
-    ("mug", drawMug), ("tree", drawTree), ("leaf", drawLeaf), ("crystal", drawCrystal), ("gallery", drawGallery), ("styles", drawStyles),
+    ("mug", drawMug), ("tree", drawTree), ("leaf", drawLeaf), ("crystal", drawCrystal), ("gallery", drawGallery), ("styles", drawStyles), ("colour", drawColour),
 ]
 if args.contains("--help") || args.contains("-h") {
     print("usage: graphite [--out dir] [\(examples.map(\.0).joined(separator: " | "))…]")

@@ -7,6 +7,7 @@ import Foundation
 /// units (the drawing's pixels × ss); `smooth: false` keeps lines that are already smooth as they are.
 public func drawChains(_ chains: [Chain], on sheet: Sheet, tone t1: ToneMap, ss: Int, rng: inout Rng, smooth: Bool = true) {
     let L = sheet.style.line
+    defer { sheet.ink = nil }
     for c0 in chains {
         let c = smooth ? smoothChain(c0, sigma: Double(ss) * L.smoothing) : c0
         let scaled = c.pts.map { $0 / Double(ss) }
@@ -49,6 +50,13 @@ public func drawChains(_ chains: [Chain], on sheet: Sheet, tone t1: ToneMap, ss:
                 sr.append(L.pressureMin + L.pressureRange * press)
                 sw.append(L.widthMin + L.widthRange * clampd(wgt, 0, L.widthCap) * (0.75 + 0.25 * ramp))
             }
+            if let C = sheet.style.colour {
+                // in colour, a line is a deeper shade of the region it borders (the darker side where two meet)
+                let m = (start + end) / 2
+                let a = t1.idAt(pts[m] + nrm[m] * 1.5), b = t1.idAt(pts[m] - nrm[m] * 1.5)
+                let id = a == 0 ? b : b == 0 ? a : (t1.at(pts[m] + nrm[m] * 1.5) >= t1.at(pts[m] - nrm[m] * 1.5) ? a : b)
+                sheet.ink = sheet.pigment(C.line, id).mixed(C.shade, C.lineShade)
+            }
             sheet.stroke(sp, sw, sr)
             start = end - (end < pts.count - 1 ? L.overlap : 0)
             if end == pts.count - 1 { break }
@@ -62,6 +70,7 @@ public func drawChains(_ chains: [Chain], on sheet: Sheet, tone t1: ToneMap, ss:
 public func drawHatching(_ t1: ToneMap, on sheet: Sheet, rng: inout Rng, turn: Double = 0) {
     let H = sheet.style.hatching
     let W = Double(t1.w), Hh = Double(t1.h)
+    defer { sheet.ink = nil }
     for L in H.layers {
         let a = (turn == 0 ? L.angle : L.angle + turn) * Double.pi / 180
         let dir = V2(cos(a), -sin(a)), nr = V2(-dir.y, dir.x)
@@ -75,6 +84,7 @@ public func drawHatching(_ t1: ToneMap, on sheet: Sheet, rng: inout Rng, turn: D
             // (the scan coordinate s is negative over part of the sheet: "in a run" is a flag, not a sentinel value)
             var inRun = false, runStart = 0.0, runID: Int32 = 0
             func emitRun(_ s0: Double, _ s1: Double) {
+                if sheet.isColour { sheet.ink = sheet.pigment(L.ink, runID) }
                 var pos = s0 + rng.range(0, H.startJitter)
                 while pos < s1 - H.minDash {
                     let len = rng.range(H.dashMin, H.dashMax)
@@ -120,6 +130,7 @@ public func drawHatching(_ t1: ToneMap, on sheet: Sheet, rng: inout Rng, turn: D
 /// factor for a fully covered pixel (≤ 0: none); by default the tone map's own stipple channel.
 public func drawStipple(_ t1: ToneMap, on sheet: Sheet, seed: Double, density: ((Int32, Int) -> Double)? = nil) {
     let S = sheet.style.stipple
+    defer { sheet.ink = nil }
     for y in 0..<t1.h { for x in 0..<t1.w {
         let i = y * t1.w + x
         let id = t1.id[i]
@@ -131,6 +142,7 @@ public func drawStipple(_ t1: ToneMap, on sheet: Sheet, seed: Double, density: (
         let dens = S.density * (S.shadeBase + Double(t1.tone[i]) * S.shadeGain) * (S.clusterBase + S.clusterGain * cluster) * factor
         let r = hash21(p * 0.731 + seed * 1.37)
         if r < dens {
+            if let C = sheet.style.colour { sheet.ink = sheet.pigment(C.stipple, id) }
             let h2 = hash21(p * 1.913 - seed)
             let c = p + V2(0.5, 0.5) + V2(hash21(p + 3.1), hash21(p - 7.7)) - 0.5
             if h2 < S.dots {
@@ -149,6 +161,7 @@ public func drawStipple(_ t1: ToneMap, on sheet: Sheet, seed: Double, density: (
 public func drawOpenings(_ g: GBuffer, on sheet: Sheet, scale: Double = 1, extra: [Float]? = nil) {
     let F = sheet.style.fill
     sheet.begin()
+    defer { sheet.ink = nil }
     let ss = g.ss
     for y in 0..<sheet.h { for x in 0..<sheet.w {
         var c = 0.0, t = 0.0
@@ -160,6 +173,7 @@ public func drawOpenings(_ g: GBuffer, on sheet: Sheet, scale: Double = 1, extra
         c /= Double(ss * ss); t /= Double(ss * ss)
         if let e = extra { c = max(c, Double(e[y * sheet.w + x])) }
         if c + t > 0 {
+            if let C = sheet.style.colour { sheet.ink = sheet.pigment(C.opening, max(g.id[(y * ss + ss / 2) * g.w + x * ss + ss / 2], 0)) }
             let gr = Double(sheet.grain[y * sheet.w + x])
             sheet.deposit(x, y, Float((c * (F.opening + F.openingGrain * gr) + t * (F.through + F.throughGrain * gr)) * scale))
         }
@@ -170,12 +184,14 @@ public func drawOpenings(_ g: GBuffer, on sheet: Sheet, scale: Double = 1, extra
 /// as cover × amount × smoothstep(0.4, 0.95, tone).
 public func drawToneFill(_ t1: ToneMap, on sheet: Sheet, amount: (Int32) -> Double) {
     sheet.begin()
+    defer { sheet.ink = nil }
     for y in 0..<t1.h { for x in 0..<t1.w {
         let i = y * t1.w + x
         let id = t1.id[i]
         guard id != 0 else { continue }
         let f = amount(id)
         if f <= 0 { continue }
+        if sheet.isColour { sheet.ink = sheet.pigment(.local(2), id) }
         let gr = Double(sheet.grain[i])
         sheet.deposit(x, y, Float(Double(t1.cover[i]) * f * sstep(0.4, 0.95, Double(t1.tone[i])) * (0.75 + 0.25 * gr)))
     } }
@@ -187,6 +203,8 @@ public func groundStroke(on sheet: Sheet, _ g: GBuffer, x0: Double, x1: Double, 
     let G = sheet.style.ground
     let len = x1 - x0
     guard len > 2 else { return }
+    if let C = sheet.style.colour { sheet.ink = C.ground }
+    defer { sheet.ink = nil }
     let n = max(Int(len / 1.5), 2)
     let seedA = rng.range(0, 1000)
     for pass in 0..<2 {

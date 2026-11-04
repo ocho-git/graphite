@@ -37,7 +37,10 @@ public struct Trim {
 
 extension Sheet {
     /// The drawn opacity of a pixel's graphite.
-    @inlinable public func opacity(_ i: Int) -> Double { clampd(pow(Double(acc[i]), style.pencil.gamma) * style.pencil.opacity, 0, 1) }
+    @inlinable public func opacity(_ i: Int) -> Double {
+        if !absorb.isEmpty { return 1 - exp(-Double(max(absorb[i * 3], absorb[i * 3 + 1], absorb[i * 3 + 2]))) }
+        return clampd(pow(Double(acc[i]), style.pencil.gamma) * style.pencil.opacity, 0, 1)
+    }
 
     /// The drawing as an image: graphite on a transparent background (premultiplied sRGB). `crop` (x, y, w, h) takes a
     /// frame of the sheet; parts of it past the sheet are transparent.
@@ -48,8 +51,20 @@ extension Sheet {
         for y in 0..<H { for x in 0..<W {
             let sx = x + cx, sy = y + cy
             guard sx >= 0, sy >= 0, sx < w, sy < h else { continue }
-            let a = clampd(pow(Double(acc[sy * w + sx]), P.gamma) * P.opacity, 0, 1)
             let i = y * W + x
+            if !absorb.isEmpty {
+                // coloured: what the pencils let through, over white paper; as premultiplied colour on a transparent
+                // ground that lays exactly that over white, alpha = 1 − the least let through
+                let k = (sy * w + sx) * 3
+                let tr = exp(-Double(absorb[k])), tg = exp(-Double(absorb[k + 1])), tb = exp(-Double(absorb[k + 2]))
+                let a = 1 - min(tr, tg, tb)
+                px[i * 4 + 0] = UInt8((255 * (tr - (1 - a))).rounded())
+                px[i * 4 + 1] = UInt8((255 * (tg - (1 - a))).rounded())
+                px[i * 4 + 2] = UInt8((255 * (tb - (1 - a))).rounded())
+                px[i * 4 + 3] = UInt8((255 * a).rounded())
+                continue
+            }
+            let a = clampd(pow(Double(acc[sy * w + sx]), P.gamma) * P.opacity, 0, 1)
             px[i * 4 + 0] = UInt8((P.red * a).rounded())
             px[i * 4 + 1] = UInt8((P.green * a).rounded())
             px[i * 4 + 2] = UInt8((P.blue * a).rounded())

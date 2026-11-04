@@ -38,7 +38,7 @@ let galleryEntries: [GalleryEntry] = [
 ]
 
 /// Draws one entry (and its close-up, if it has one).
-func drawEntry(_ e: GalleryEntry, style: Style? = nil) -> [(name: String, caption: String, image: CGImage)] {
+func drawEntry(_ e: GalleryEntry, style: Style? = nil, palette: ((Int32) -> Pigment?)? = nil) -> [(name: String, caption: String, image: CGImage)] {
     var rng = Rng(e.seed)
     let m = e.build(&rng)
     let pk = pickView(&rng, lo: m.bounds.lo, hi: m.bounds.hi, angles: m.angles, frontEye: m.frontEye)
@@ -46,6 +46,7 @@ func drawEntry(_ e: GalleryEntry, style: Style? = nil) -> [(name: String, captio
     var o = m.options
     o.seed = e.seed % 100_000 + 1
     if let s = style { o.style = s }
+    o.palette = palette
     var fromAbove = false
     if case .plan = view { fromAbove = true }
     if fromAbove {

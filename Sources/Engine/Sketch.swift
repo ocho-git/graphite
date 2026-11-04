@@ -18,6 +18,8 @@ public enum View {
 
 public struct SketchOptions {
     public var style: Style = .standard
+    /// Each region's own pencil in a coloured drawing (the style has `colour`); nil for a region: the style's fallback.
+    public var palette: ((Int32) -> Pigment?)? = nil
     /// The contour rules (the subject's own edgeWeight is consulted after the depth test).
     public var rules = ContourRules()
     /// Kinds that never take stipple (whatever their material says): openings, paper.
@@ -235,6 +237,7 @@ public func pencil<S: Subject>(_ s: S, _ cam: Camera, _ g: GBuffer, _ o: SketchO
     let W = g.w / g.ss, H = g.h / g.ss, ss = g.ss
     var rng = Rng(o.seed &* 7919 &+ 17)
     let sheet = Sheet(w: W, h: H, seed: Double(o.seed % 97) * 0.37 + 3, style: o.style)
+    sheet.palette = o.palette
     let t1 = ToneMap(g)
     drawOpenings(g, on: sheet, scale: pow(min(unit, 1), 0.7))
     drawHatching(t1, on: sheet, rng: &rng, turn: turn)
